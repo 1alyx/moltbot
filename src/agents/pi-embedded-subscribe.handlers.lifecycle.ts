@@ -89,8 +89,7 @@ export function handleAgentEnd(ctx: EmbeddedPiSubscribeContext) {
   ctx.state.blockState.inlineCode = createInlineCodeState();
 
   if (ctx.state.pendingCompactionRetry > 0) {
-    ctx.resolveCompactionRetry();
-  } else {
-    ctx.maybeResolveCompactionWait();
+    ctx.state.pendingCompactionRetry = 0;
   }
+  ctx.maybeResolveCompactionWait();
 }

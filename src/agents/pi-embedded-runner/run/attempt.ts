@@ -645,6 +645,36 @@ export async function runEmbeddedAttempt(
         didSendViaMessagingTool,
         getLastToolError,
       } = subscription;
+      const waitForCompactionRetryWithTimeout = async (): Promise<void> => {
+        const signal = runAbortController.signal;
+        let timeoutId: NodeJS.Timeout | undefined;
+        let onAbort: (() => void) | undefined;
+        const timeoutPromise = new Promise<never>((_, reject) => {
+          if (signal.aborted) {
+            reject(makeAbortError(signal));
+            return;
+          }
+          onAbort = () => {
+            reject(makeAbortError(signal));
+          };
+          signal.addEventListener("abort", onAbort, { once: true });
+          timeoutId = setTimeout(() => {
+            const err = new Error("compaction retry timeout");
+            err.name = "TimeoutError";
+            reject(err);
+          }, 30_000);
+        });
+        try {
+          await Promise.race([waitForCompactionRetry(), timeoutPromise]);
+        } finally {
+          if (timeoutId) {
+            clearTimeout(timeoutId);
+          }
+          if (onAbort) {
+            signal.removeEventListener("abort", onAbort);
+          }
+        }
+      };
 
       const queueHandle: EmbeddedPiQueueHandle = {
         queueMessage: async (text: string) => {
@@ -815,7 +845,7 @@ export async function runEmbeddedAttempt(
         }
 
         try {
-          await waitForCompactionRetry();
+          await waitForCompactionRetryWithTimeout();
         } catch (err) {
           if (isAbortError(err)) {
             if (!promptError) {
